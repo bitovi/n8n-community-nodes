@@ -66,3 +66,4 @@ We welcome community contributions! Please open an issue or submit a PR if you'd
 ## License
 
 MIT License © [Bitovi](https://www.bitovi.com/)
+[![Built better by Bitovi](assets/bitovi-blurb.png)](https://www.bitovi.com/n8n-automation-consulting)
