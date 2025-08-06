@@ -50,7 +50,7 @@ docker run -it --rm \
   bitovi/n8n-nodes-custom
 ```
 
-**Docker Hub Repository:** [`bitovi/n8n-nodes-custom`](https://hub.docker.com/r/bitovi/n8n-nodes-custom)
+**Docker Hub Repository:** [`bitovi/n8n-community-nodes`](https://hub.docker.com/r/bitovi/n8n-community-nodes)
 
 ## Image Management
 
@@ -66,4 +66,9 @@ We welcome community contributions! Please open an issue or submit a PR if you'd
 ## License
 
 MIT License © [Bitovi](https://www.bitovi.com/)
-[![Built better by Bitovi](assets/bitovi-blurb.png)](https://www.bitovi.com/n8n-automation-consulting)
+
+
+
+<a href="https://www.bitovi.com/n8n-automation-consulting" target="_blank">
+  <img src="assets/bitovi-blurb.png" alt="Built better by Bitovi" width="300"/>
+</a>
