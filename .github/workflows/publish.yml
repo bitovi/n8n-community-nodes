@@ -31,7 +31,7 @@ jobs:
       - name: Check for newer n8n base image
         id: check
         env:
-          MY_IMAGE: bitovi/n8n-nodes-custom
+          MY_IMAGE: bitovi/n8n-community-nodes
         run: |
           echo "Getting latest n8n version from Docker Hub..."
           
@@ -100,7 +100,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: bitovi/n8n-nodes-custom
+          images: bitovi/n8n-community-nodes
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ needs.check-version.outputs.n8n_version }}
