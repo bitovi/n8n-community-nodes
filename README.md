@@ -34,11 +34,11 @@ Our Docker image includes the following Bitovi n8n community nodes:
 
 ## Usage
 
-Get started quickly with our pre-built Docker image that includes all Bitovi community nodes. The image is available on [Docker Hub](https://hub.docker.com/r/bitovi/n8n-nodes-custom) and can be used in two ways:
+Get started quickly with our pre-built Docker image that includes all Bitovi community nodes. The image is available on [Docker Hub](https://hub.docker.com/r/bitovi/n8n-community-nodes) and can be used in two ways:
 
 ### Option 1: Use as Base Image
 ```dockerfile
-FROM bitovi/n8n-nodes-custom
+FROM bitovi/n8n-community-nodes
 # Add your custom configurations here
 ```
 
@@ -47,7 +47,7 @@ FROM bitovi/n8n-nodes-custom
 docker run -it --rm \
   --name n8n \
   -p 5678:5678 \
-  bitovi/n8n-nodes-custom
+  bitovi/n8n-community-nodes
 ```
 
 **Docker Hub Repository:** [`bitovi/n8n-community-nodes`](https://hub.docker.com/r/bitovi/n8n-community-nodes)
