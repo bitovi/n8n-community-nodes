@@ -31,6 +31,7 @@ WORKDIR /home/node/.n8n/nodes
 RUN npm install --only=prod --ignore-scripts \
     @bitovi/n8n-nodes-confluence@latest \
     @bitovi/n8n-nodes-excel@latest \
+    @bitovi/n8n-nodes-freshbooks@latest \
     @bitovi/n8n-nodes-google-search@latest \
     @bitovi/n8n-nodes-langfuse@latest \
     @bitovi/n8n-nodes-markitdown@latest \
