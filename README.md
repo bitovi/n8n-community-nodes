@@ -14,7 +14,7 @@ Our Docker image includes the following Bitovi n8n community nodes:
 - **[`n8n-nodes-excel`](https://github.com/bitovi/n8n-nodes-excel)**  
   N8N node to work with Excel files.
 
-- **[`n8n-nodes-excel`](https://github.com/bitovi/n8n-nodes-freshbooks)**  
+- **[`n8n-nodes-freshbooks`](https://github.com/bitovi/n8n-nodes-freshbooks)**  
   N8N node to work with Freshbooks.
 
 - **[`n8n-nodes-google-search`](https://github.com/bitovi/n8n-nodes-google-search)**  
