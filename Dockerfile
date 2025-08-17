@@ -22,7 +22,7 @@ RUN apk add --no-cache --virtual .build-deps git build-base python3-dev py3-pip 
 ENV PATH="/usr/local/bin:$PATH"
 
 # Install global dependencies and set up directories in single layer
-RUN npm i -g child_process fs-extra tmp-promise jszip css-to-xpath wikipedia langfuse
+RUN npm i -g child_process date-fns fs-extra tmp-promise jszip css-to-xpath wikipedia langfuse
 
 USER node
 WORKDIR /home/node/.n8n/nodes
