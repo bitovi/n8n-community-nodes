@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      target_tag:
+        description: 'Target tag for the Docker image'
+        required: false
+        type: string
+        default: 'latest'
 
 permissions:
   contents: read
@@ -33,6 +38,14 @@ jobs:
         env:
           MY_IMAGE: bitovi/n8n-community-nodes
         run: |
+          # Check if target_tag is a version number for manual workflow dispatch
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.target_tag }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Manual workflow dispatch with version tag detected: ${{ github.event.inputs.target_tag }}"
+            echo "Using specified version as n8n version."
+            echo "n8n_version=${{ github.event.inputs.target_tag }}" >> "$GITHUB_OUTPUT"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "Getting latest n8n version from Docker Hub..."
           
           # Get all tags from Docker Hub API and find the latest semantic version
@@ -102,8 +115,9 @@ jobs:
         with:
           images: bitovi/n8n-community-nodes
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=${{ needs.check-version.outputs.n8n_version }}
+            type=raw,value=${{ github.event.inputs.target_tag || 'latest' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ needs.check-version.outputs.n8n_version }},enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.target_tag != needs.check-version.outputs.n8n_version }}
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
       - name: Build and push Docker image
