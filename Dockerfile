@@ -14,7 +14,7 @@ USER root
 # 3. Ensure Python runtime packages remain installed.
 # 4. Remove only the build dependencies to keep the image smaller.
 RUN apk add --no-cache --virtual .build-deps git build-base python3-dev py3-pip && \
-    apk add --no-cache python3 && \
+    apk add --no-cache python3 pandoc && \
     pip install markitdown --break-system-packages && \
     apk del .build-deps
 
