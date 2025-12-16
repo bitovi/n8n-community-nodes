@@ -1,7 +1,7 @@
-ARG N8N_VERSION=1
+ARG N8N_VERSION=latest
 FROM n8nio/n8n:${N8N_VERSION}
 
-ARG N8N_VERSION=1
+ARG N8N_VERSION=latest
 LABEL io.n8n.version.base="${N8N_VERSION}"
 
 # Switch to the root user for installations
