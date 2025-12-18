@@ -7,12 +7,16 @@ LABEL io.n8n.version.base="${N8N_VERSION}"
 # Switch to the root user for installations
 USER root
 
-# === Python Dependencies for Alpine ===
-# This uses Alpine's 'apk' package manager.
-# 1. Create a temporary virtual package '.build-deps' with all build dependencies.
-# 2. Use pip to install markitdown globally, adding '--break-system-packages' to handle PEP 668.
-# 3. Ensure Python runtime packages remain installed.
-# 4. Remove only the build dependencies to keep the image smaller.
+# Reinstall apk-tools since some upstream images remove it
+RUN ARCH=$(uname -m) && \
+    wget -qO- "http://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${ARCH}/" | \
+    grep -o 'href="apk-tools-static-[^"]*\.apk"' | head -1 | cut -d'"' -f2 | \
+    xargs -I {} wget -q "http://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${ARCH}/{}" && \
+    tar -xzf apk-tools-static-*.apk && \
+    ./sbin/apk.static -X http://dl-cdn.alpinelinux.org/alpine/latest-stable/main \
+        -U --allow-untrusted add apk-tools && \
+    rm -rf sbin apk-tools-static-*.apk
+
 RUN apk add --no-cache --virtual .build-deps git build-base python3-dev py3-pip && \
     apk add --no-cache python3 pandoc && \
     pip install markitdown --break-system-packages && \
