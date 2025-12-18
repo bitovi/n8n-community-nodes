@@ -6,6 +6,9 @@ ARG INSTALL_ROOT=/opt/runtime
 
 RUN set -eux; \
     mkdir -p "${INSTALL_ROOT}"; \
+    mkdir -p "${INSTALL_ROOT}/etc"; \
+    cp -L /etc/resolv.conf "${INSTALL_ROOT}/etc/resolv.conf"; \
+    cp -L /etc/hosts "${INSTALL_ROOT}/etc/hosts"; \
     apk --root "${INSTALL_ROOT}" --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories --initdb add --no-cache python3 py3-pip pandoc && \
     apk --root "${INSTALL_ROOT}" --keys-dir /etc/apk/keys --repositories-file /etc/apk/repositories add --no-cache --virtual .build-deps git build-base python3-dev && \
     chroot "${INSTALL_ROOT}" /usr/bin/pip install markitdown --break-system-packages && \
