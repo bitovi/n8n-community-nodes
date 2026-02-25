@@ -8,19 +8,22 @@ LABEL io.n8n.version.base="${N8N_VERSION}"
 USER root
 
 # Reinstall apk-tools since some upstream images remove it
+# Exit 0 to continue even if this fails for very old base images
 RUN ARCH=$(uname -m) && \
-    wget -qO- "http://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${ARCH}/" | \
+    (wget -qO- "http://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${ARCH}/" | \
     grep -o 'href="apk-tools-static-[^"]*\.apk"' | head -1 | cut -d'"' -f2 | \
     xargs -I {} wget -q "http://dl-cdn.alpinelinux.org/alpine/latest-stable/main/${ARCH}/{}" && \
     tar -xzf apk-tools-static-*.apk && \
     ./sbin/apk.static -X http://dl-cdn.alpinelinux.org/alpine/latest-stable/main \
         -U --allow-untrusted add apk-tools && \
-    rm -rf sbin apk-tools-static-*.apk
+    rm -rf sbin apk-tools-static-*.apk) || echo "Warning: Could not reinstall apk-tools, using existing version"
 
-RUN apk add --no-cache --virtual .build-deps git build-base python3-dev py3-pip && \
+# Install Python dependencies for markitdown (optional for compatibility with older versions)
+# If this fails on older base images, we continue without markitdown support
+RUN (apk add --no-cache --virtual .build-deps git build-base python3-dev py3-pip && \
     apk add --no-cache python3 pandoc && \
     pip install markitdown --break-system-packages && \
-    apk del .build-deps
+    apk del .build-deps) || echo "Warning: Could not install markitdown dependencies (likely older base image). Continuing without markitdown support."
 
 # Ensure the Python scripts directory is in PATH for all users
 ENV PATH="/usr/local/bin:$PATH"

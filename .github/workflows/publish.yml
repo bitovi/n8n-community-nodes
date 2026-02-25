@@ -79,10 +79,16 @@ jobs:
           )
 
           # Find missing versions (versions in upstream but not in our repo)
+          # Filter out very old versions (< 1.0.0) that may have compatibility issues
           missing_versions=()
           while IFS= read -r version; do
             if ! echo "$our_versions" | grep -q "^${version}$"; then
-              missing_versions+=("$version")
+              # Skip versions older than 1.0.0 (pre-2024 versions with compatibility issues)
+              if [[ $(echo -e "1.0.0\n$version" | sort -V | head -1) == "1.0.0" ]]; then
+                missing_versions+=("$version")
+              else
+                echo "Skipping old version $version (< 1.0.0)"
+              fi
             fi
           done <<< "$all_upstream_versions"
 
