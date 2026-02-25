@@ -27,6 +27,7 @@ jobs:
     outputs:
       should_publish: ${{ steps.check.outputs.should_publish }}
       n8n_version: ${{ steps.check.outputs.n8n_version }}
+      missing_versions: ${{ steps.check.outputs.missing_versions }}
     steps:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -43,63 +44,78 @@ jobs:
             echo "Manual workflow dispatch with version tag detected: ${{ github.event.inputs.target_tag }}"
             echo "Using specified version as n8n version."
             echo "n8n_version=${{ github.event.inputs.target_tag }}" >> "$GITHUB_OUTPUT"
+            echo "missing_versions=[\"${{ github.event.inputs.target_tag }}\"]" >> "$GITHUB_OUTPUT"
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "Getting latest n8n version from Docker Hub..."
           
-          # Get all tags from Docker Hub API and find the latest semantic version
-          latest_official_n8n=$(curl -s "https://registry.hub.docker.com/v2/repositories/n8nio/n8n/tags/?page_size=100" | \
-            jq -r '.results[].name' | \
-            grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | \
-            sort -V | \
-            tail -1)
+          echo "Getting all n8n semantic versions from Docker Hub..."
+          
+          # Get all semantic version tags from n8nio/n8n (checking multiple pages)
+          all_upstream_versions=$(
+            for page in {1..5}; do
+              curl -s "https://registry.hub.docker.com/v2/repositories/n8nio/n8n/tags/?page_size=100&page=$page" | \
+                jq -r '.results[].name'
+            done | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u
+          )
 
-          if [ -z "$latest_official_n8n" ]; then
-            echo "::error::Failed to get latest n8n version from Docker Hub. Halting."
+          if [ -z "$all_upstream_versions" ]; then
+            echo "::error::Failed to get n8n versions from Docker Hub. Halting."
             exit 1
           fi
 
+          latest_official_n8n=$(echo "$all_upstream_versions" | tail -1)
           echo "Latest official n8n version on Docker Hub: $latest_official_n8n"
           echo "n8n_version=${latest_official_n8n}" >> "$GITHUB_OUTPUT"
 
-          echo "Verifying tag '$latest_official_n8n' exists on Docker Hub for n8nio/n8n..."
-          if ! docker manifest inspect "n8nio/n8n:${latest_official_n8n}" > /dev/null; then
-            echo "::error::Failed to verify Docker Hub image n8nio/n8n:${latest_official_n8n}. Halting."
-            exit 1
-          fi
-          echo "Latest official version '$latest_official_n8n' is confirmed on Docker Hub."
+          echo "Getting all existing tags from our repository..."
+          
+          # Get all tags from our repository
+          our_versions=$(
+            for page in {1..5}; do
+              curl -s "https://registry.hub.docker.com/v2/repositories/${MY_IMAGE}/tags/?page_size=100&page=$page" | \
+                jq -r '.results[].name'
+            done | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u
+          )
 
-          echo "Attempting to pull our existing image: ${MY_IMAGE}:latest"
-          if ! docker pull "${MY_IMAGE}:latest"; then
-            echo "Could not pull existing image. Assuming first run. Proceeding to publish."
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Find missing versions (versions in upstream but not in our repo)
+          missing_versions=()
+          while IFS= read -r version; do
+            if ! echo "$our_versions" | grep -q "^${version}$"; then
+              missing_versions+=("$version")
+            fi
+          done <<< "$all_upstream_versions"
 
-          current_base_version=$(docker inspect --format '{{ index .Config.Labels "io.n8n.version.base" }}' "${MY_IMAGE}:latest")
-          if [ -z "$current_base_version" ]; then
-            echo "Could not determine n8n version from our image's label. Proceeding to publish."
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Current n8n base version in our image: $current_base_version"
-
-          if [ "$latest_official_n8n" != "$current_base_version" ]; then
-            echo "A newer official n8n version ($latest_official_n8n) is available. Proceeding to publish."
-            echo "should_publish=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Our current base version ($current_base_version) is up-to-date. Skipping publish jobs."
+          if [ ${#missing_versions[@]} -eq 0 ]; then
+            echo "No missing versions found. All upstream versions are published."
+            echo "missing_versions=[]" >> "$GITHUB_OUTPUT"
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Limit to the 5 oldest missing versions to avoid overwhelming the build
+          missing_versions_limited=("${missing_versions[@]:0:5}")
+          
+          echo "Found ${#missing_versions[@]} missing version(s):"
+          printf '%s\n' "${missing_versions[@]}"
+          
+          echo "Will publish ${#missing_versions_limited[@]} version(s) in this run:"
+          printf '%s\n' "${missing_versions_limited[@]}"
+          
+          # Convert to JSON array
+          missing_json=$(printf '%s\n' "${missing_versions_limited[@]}" | jq -R . | jq -s -c .)
+          echo "missing_versions=${missing_json}" >> "$GITHUB_OUTPUT"
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
 
   publish-image:
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.platform_config.runner }}
     needs: [check-version]
     if: github.event.inputs.force_publish == 'true' || needs.check-version.outputs.should_publish == 'true' || github.event_name == 'schedule' || github.event_name == 'release'
     strategy:
+      fail-fast: false
       matrix:
-        include:
+        version: ${{ fromJSON(needs.check-version.outputs.missing_versions) }}
+        platform_config:
           - runner: ubuntu-latest
             platform: linux/amd64
             platform_tag: amd64
@@ -122,11 +138,10 @@ jobs:
         with:
           images: bitovi/n8n-community-nodes
           tags: |
-            type=raw,value=${{ github.event.inputs.target_tag || 'latest' }}-${{ matrix.platform_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=raw,value=latest-${{ matrix.platform_tag }},enable=${{ github.event_name != 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ needs.check-version.outputs.n8n_version }}-${{ matrix.platform_tag }},enable=${{ github.event_name != 'workflow_dispatch' || github.event.inputs.target_tag != needs.check-version.outputs.n8n_version }}
-            type=semver,pattern={{version}}-${{ matrix.platform_tag }},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}}-${{ matrix.platform_tag }},enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+            type=raw,value=${{ matrix.version }}-${{ matrix.platform_config.platform_tag }}
+            type=raw,value=latest-${{ matrix.platform_config.platform_tag }},enable=${{ matrix.version == needs.check-version.outputs.n8n_version }}
+            type=semver,pattern={{version}}-${{ matrix.platform_config.platform_tag }},enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}}.{{minor}}-${{ matrix.platform_config.platform_tag }},enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -135,10 +150,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
             ${{ steps.meta.outputs.labels }}
-            io.n8n.version.base=${{ needs.check-version.outputs.n8n_version }}
-          platforms: ${{ matrix.platform }}
+            io.n8n.version.base=${{ matrix.version }}
+          platforms: ${{ matrix.platform_config.platform }}
           build-args: |
-            N8N_VERSION=${{ needs.check-version.outputs.n8n_version }}
+            N8N_VERSION=${{ matrix.version }}
   
   publish-manifest:
     runs-on: ubuntu-latest
@@ -150,22 +165,27 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Create and push multi-arch manifest for workflow_dispatch
-        if: github.event_name == 'workflow_dispatch'
+      - name: Create and push multi-arch manifests
         run: |
-          TARGET_TAG="${{ github.event.inputs.target_tag || 'latest' }}"
-          docker buildx imagetools create -t bitovi/n8n-community-nodes:${TARGET_TAG} \
-            bitovi/n8n-community-nodes:${TARGET_TAG}-amd64 \
-            bitovi/n8n-community-nodes:${TARGET_TAG}-arm64
-      - name: Create and push multi-arch manifest for scheduled/main builds
-        if: github.event_name != 'workflow_dispatch' && github.ref == 'refs/heads/main'
-        run: |
-          docker buildx imagetools create -t bitovi/n8n-community-nodes:latest \
-            bitovi/n8n-community-nodes:latest-amd64 \
-            bitovi/n8n-community-nodes:latest-arm64
-          docker buildx imagetools create -t bitovi/n8n-community-nodes:${{ needs.check-version.outputs.n8n_version }} \
-            bitovi/n8n-community-nodes:${{ needs.check-version.outputs.n8n_version }}-amd64 \
-            bitovi/n8n-community-nodes:${{ needs.check-version.outputs.n8n_version }}-arm64
+          # Get the array of missing versions
+          MISSING_VERSIONS='${{ needs.check-version.outputs.missing_versions }}'
+          
+          # Parse JSON array and create manifests for each version
+          echo "$MISSING_VERSIONS" | jq -r '.[]' | while read -r VERSION; do
+            echo "Creating manifest for version: $VERSION"
+            docker buildx imagetools create -t bitovi/n8n-community-nodes:${VERSION} \
+              bitovi/n8n-community-nodes:${VERSION}-amd64 \
+              bitovi/n8n-community-nodes:${VERSION}-arm64
+          done
+          
+          # Update the 'latest' tag to point to the newest version
+          LATEST_VERSION=$(echo "$MISSING_VERSIONS" | jq -r '.[-1]')
+          if [ -n "$LATEST_VERSION" ] && [ "$LATEST_VERSION" != "null" ]; then
+            echo "Updating 'latest' tag to point to version: $LATEST_VERSION"
+            docker buildx imagetools create -t bitovi/n8n-community-nodes:latest \
+              bitovi/n8n-community-nodes:${LATEST_VERSION}-amd64 \
+              bitovi/n8n-community-nodes:${LATEST_VERSION}-arm64
+          fi
       - name: Create and push multi-arch manifest for releases
         if: github.event_name == 'release'
         run: |
