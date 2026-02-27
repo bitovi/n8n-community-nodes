@@ -52,10 +52,15 @@ jobs:
           echo "Getting all n8n semantic versions from Docker Hub..."
           
           # Get all semantic version tags from n8nio/n8n (checking multiple pages)
+          # Note: Docker Hub API sorts by last_updated DESC, so latest versions are on page 1
           all_upstream_versions=$(
-            for page in {1..5}; do
-              curl -s "https://registry.hub.docker.com/v2/repositories/n8nio/n8n/tags/?page_size=100&page=$page" | \
-                jq -r '.results[].name'
+            for page in {1..10}; do
+              response=$(curl -s "https://registry.hub.docker.com/v2/repositories/n8nio/n8n/tags/?page_size=100&page=$page")
+              echo "$response" | jq -r '.results[].name'
+              # Check if there's a next page
+              if [ "$(echo "$response" | jq -r '.next')" == "null" ]; then
+                break
+              fi
             done | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u
           )
 
@@ -64,19 +69,46 @@ jobs:
             exit 1
           fi
 
+          upstream_count=$(echo "$all_upstream_versions" | wc -l | tr -d ' ')
           latest_official_n8n=$(echo "$all_upstream_versions" | tail -1)
+          echo "Found $upstream_count upstream versions"
           echo "Latest official n8n version on Docker Hub: $latest_official_n8n"
+          echo "Last 5 upstream versions:"
+          echo "$all_upstream_versions" | tail -5
           echo "n8n_version=${latest_official_n8n}" >> "$GITHUB_OUTPUT"
 
           echo "Getting all existing tags from our repository..."
           
           # Get all tags from our repository
           our_versions=$(
-            for page in {1..5}; do
-              curl -s "https://registry.hub.docker.com/v2/repositories/${MY_IMAGE}/tags/?page_size=100&page=$page" | \
-                jq -r '.results[].name'
+            for page in {1..10}; do
+              response=$(curl -s "https://registry.hub.docker.com/v2/repositories/${MY_IMAGE}/tags/?page_size=100&page=$page")
+              echo "$response" | jq -r '.results[].name'
+              # Check if there's a next page
+              if [ "$(echo "$response" | jq -r '.next')" == "null" ]; then
+                break
+              fi
             done | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u
           )
+
+          our_count=$(echo "$our_versions" | wc -l | tr -d ' ')
+          echo "Found $our_count versions in our repository"
+          if [ -n "$our_versions" ]; then
+            echo "Last 5 versions in our repo:"
+            echo "$our_versions" | tail -5
+          else
+            echo "Our repository has no semantic version tags yet"
+            our_versions=""
+          fi
+          
+          # Debug check: verify if latest upstream version exists in our repo
+          if [ -n "$latest_official_n8n" ]; then
+            if [ -n "$our_versions" ] && echo "$our_versions" | grep -q "^${latest_official_n8n}$"; then
+              echo "✓ Latest version $latest_official_n8n already exists in our repo"
+            else
+              echo "✗ Latest version $latest_official_n8n is MISSING from our repo"
+            fi
+          fi
 
           # Find missing versions (versions in upstream but not in our repo)
           # Filter out very old versions (< 1.0.0) that may have compatibility issues
