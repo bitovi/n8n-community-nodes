@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: publish-workflow
+  cancel-in-progress: false
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -79,8 +83,8 @@ jobs:
 
           echo "Getting all existing tags from our repository..."
           
-          # Get all tags from our repository
-          our_versions=$(
+          # Get all tags from our repository (both versioned and platform-specific)
+          all_our_tags=$(
             for page in {1..10}; do
               response=$(curl -s "https://registry.hub.docker.com/v2/repositories/${MY_IMAGE}/tags/?page_size=100&page=$page")
               echo "$response" | jq -r '.results[].name'
@@ -88,22 +92,42 @@ jobs:
               if [ "$(echo "$response" | jq -r '.next')" == "null" ]; then
                 break
               fi
-            done | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u
+            done
+          )
+          
+          # Extract semantic versions without platform suffix
+          our_versions=$(echo "$all_our_tags" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V -u)
+          
+          # Find versions where both amd64 and arm64 platform tags exist
+          our_platform_versions=()
+          while IFS= read -r tag; do
+            if [[ "$tag" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-amd64$ ]]; then
+              version="${BASH_REMATCH[1]}"
+              # Check if corresponding arm64 tag exists
+              if echo "$all_our_tags" | grep -q "^${version}-arm64$"; then
+                our_platform_versions+=("$version")
+              fi
+            fi
+          done <<< "$all_our_tags"
+          
+          # Combine: versions with plain tags OR with both platform tags
+          our_versions_combined=$(
+            (echo "$our_versions"; printf '%s\n' "${our_platform_versions[@]}") | grep -v '^$' | sort -V -u
           )
 
-          our_count=$(echo "$our_versions" | wc -l | tr -d ' ')
-          echo "Found $our_count versions in our repository"
-          if [ -n "$our_versions" ]; then
+          our_count=$(echo "$our_versions_combined" | wc -l | tr -d ' ')
+          echo "Found $our_count fully published versions in our repository"
+          if [ -n "$our_versions_combined" ]; then
             echo "Last 5 versions in our repo:"
-            echo "$our_versions" | tail -5
+            echo "$our_versions_combined" | tail -5
           else
             echo "Our repository has no semantic version tags yet"
-            our_versions=""
+            our_versions_combined=""
           fi
           
           # Debug check: verify if latest upstream version exists in our repo
           if [ -n "$latest_official_n8n" ]; then
-            if [ -n "$our_versions" ] && echo "$our_versions" | grep -q "^${latest_official_n8n}$"; then
+            if [ -n "$our_versions_combined" ] && echo "$our_versions_combined" | grep -q "^${latest_official_n8n}$"; then
               echo "✓ Latest version $latest_official_n8n already exists in our repo"
             else
               echo "✗ Latest version $latest_official_n8n is MISSING from our repo"
@@ -114,7 +138,7 @@ jobs:
           # Filter out very old versions (< 1.0.0) that may have compatibility issues
           missing_versions=()
           while IFS= read -r version; do
-            if ! echo "$our_versions" | grep -q "^${version}$"; then
+            if ! echo "$our_versions_combined" | grep -q "^${version}$"; then
               # Skip versions older than 1.0.0 (pre-2024 versions with compatibility issues)
               if [[ $(echo -e "1.0.0\n$version" | sort -V | head -1) == "1.0.0" ]]; then
                 missing_versions+=("$version")
